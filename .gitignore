@@ -6,3 +6,4 @@ venv/
 # Node / Vite
 node_modules/
 dist/
+.env
