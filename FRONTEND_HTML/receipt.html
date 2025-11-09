@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Receipt Scanner - {{room_id}}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src='https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js'></script>
+</head>
+<body class="bg">
+  <div class="topbar neon-top">
+    <div>Finance Splitter - Receipt Scanner</div>
+    <div>Room: <strong id="roomId">{{room_id}}</strong></div>
+    <div><a href="/join/{{room_id}}?name={{name}}">← Back to Room</a></div>
+  </div>
+
+  <div class="receipt-container">
+    <div class="receipt-section neon-card">
+      <h2>📸 Scan Receipt</h2>
+      <p class="subtitle">Upload a receipt image to auto-fill expense details</p>
+      
+      <!-- Simple file input button -->
+      <div style="text-align: center; margin: 40px 0;">
+        <label for="receiptInput" class="btn" style="display: inline-block; cursor: pointer; padding: 20px 40px; font-size: 18px;">
+          📁 Choose Receipt Image
+        </label>
+        <input type="file" id="receiptInput" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
+      </div>
+
+      <div class="upload-area" id="uploadArea" style="min-height: 200px; display: none;">
+        <img id="receiptPreview" style="max-width:100%; max-height:400px; border-radius:12px;">
+      </div>
+
+      <button id="scanBtn" class="btn" style="display:none; margin:20px auto; display: block;" onclick="scanReceipt()">🔍 Scan & Auto-Fill</button>
+
+      <div id="loadingSection" style="display:none; text-align:center; margin-top:30px;">
+        <div class="loading-spinner"></div>
+        <p class="loading-text" id="loadingText" style="font-size:18px; font-weight:600; color:var(--accent);">Initializing scanner...</p>
+        <p class="hint" style="margin-top:10px; font-size:14px;">⏱️ This usually takes 15-30 seconds. Please be patient!</p>
+        <div style="margin-top:20px; padding:16px; background:rgba(255,255,255,0.05); border-radius:10px; max-width:400px; margin-left:auto; margin-right:auto;">
+          <p style="margin:8px 0; font-size:13px;">📊 Progress: <span id="progressPercent">0%</span></p>
+          <div style="width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">
+            <div id="progressBar" style="width:0%; height:100%; background:linear-gradient(90deg, var(--accent), var(--accent2)); transition:width 0.3s;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      <div id="resultsSection" style="display:none; margin-top:30px;">
+        <h3 style="color:var(--success); margin-bottom:20px;">✅ Receipt Scanned Successfully!</h3>
+        
+        <div class="scan-results">
+          <div class="result-item">
+            <label>🏷️ Category Detected:</label>
+            <strong id="detectedCategory">Food</strong>
+          </div>
+          <div class="result-item">
+            <label>💰 Total Amount:</label>
+            <strong id="detectedTotal">₹0.00</strong>
+          </div>
+          <div class="result-item">
+            <label>📝 Items Found:</label>
+            <div id="detectedItems" style="margin-top:10px;"></div>
+          </div>
+        </div>
+
+        <div class="btn-group" style="margin-top:30px;">
+          <button id="useDataBtn" class="btn" onclick="useScannedData()">✅ Use This Data</button>
+          <button id="retryBtn" class="btn alt" onclick="resetUpload()">🔄 Try Another Receipt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Global state
+    let receiptData = {
+      roomId: "{{room_id}}",
+      userName: "{{name}}",
+      category: '',
+      total: 0,
+      items: [],
+      rawText: ''
+    };
+
+    let uploadedFile = null;
+
+    // ------------------ INITIALIZE ------------------
+    (function initReceiptScanner() {
+      console.log('Receipt scanner initialized');
+      // Remove complex event handlers - using inline onclick instead
+    })();
+
+    // ------------------ FILE UPLOAD ------------------
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) {
+        alert('No file selected');
+        return;
+      }
+
+      alert('File selected: ' + file.name); // Debug
+
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please upload an image file (JPG, PNG, etc.)');
+        return;
+      }
+
+      // Validate file size (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File too large! Maximum 10MB');
+        return;
+      }
+
+      uploadedFile = file;
+
+      // Show preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const preview = document.getElementById('receiptPreview');
+        const uploadArea = document.getElementById('uploadArea');
+        const scanBtn = document.getElementById('scanBtn');
+        
+        preview.src = e.target.result;
+        uploadArea.style.display = 'block';
+        scanBtn.style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // ------------------ OCR SCANNING ------------------
+    async function scanReceipt() {
+      if (!uploadedFile) {
+        alert('Please upload a receipt first');
+        return;
+      }
+
+      // Hide scan button, show loading
+      document.getElementById('scanBtn').style.display = 'none';
+      document.getElementById('loadingSection').style.display = 'block';
+      document.getElementById('resultsSection').style.display = 'none';
+
+      const loadingText = document.getElementById('loadingText');
+      const progressPercent = document.getElementById('progressPercent');
+      const progressBar = document.getElementById('progressBar');
+
+      try {
+        loadingText.textContent = '📥 Loading OCR engine...';
+        progressPercent.textContent = '0%';
+        progressBar.style.width = '0%';
+
+        // Create Tesseract worker with progress tracking
+        const worker = await Tesseract.createWorker({
+          logger: m => {
+            console.log(m);
+            
+            if (m.status === 'loading tesseract core') {
+              loadingText.textContent = '⚙️ Loading OCR engine...';
+              progressPercent.textContent = Math.round(m.progress * 100) + '%';
+              progressBar.style.width = (m.progress * 100) + '%';
+            }
+            else if (m.status === 'initializing tesseract') {
+              loadingText.textContent = '🔧 Initializing scanner...';
+              progressPercent.textContent = Math.round(m.progress * 100) + '%';
+              progressBar.style.width = (m.progress * 100) + '%';
+            }
+            else if (m.status === 'loading language traineddata') {
+              loadingText.textContent = '📚 Loading language data...';
+              progressPercent.textContent = Math.round(m.progress * 100) + '%';
+              progressBar.style.width = (m.progress * 100) + '%';
+            }
+            else if (m.status === 'initializing api') {
+              loadingText.textContent = '🚀 Starting up...';
+              progressPercent.textContent = Math.round(m.progress * 100) + '%';
+              progressBar.style.width = (m.progress * 100) + '%';
+            }
+            else if (m.status === 'recognizing text') {
+              loadingText.textContent = '🔍 Scanning receipt...';
+              const progress = Math.round(m.progress * 100);
+              progressPercent.textContent = progress + '%';
+              progressBar.style.width = progress + '%';
+            }
+          }
+        });
+
+        loadingText.textContent = '⚡ Processing image...';
+        
+        await worker.loadLanguage('eng');
+        await worker.initialize('eng');
+
+        // Recognize text
+        loadingText.textContent = '🔍 Reading text from receipt...';
+        const result = await worker.recognize(uploadedFile);
+
+        await worker.terminate();
+
+        // Store raw text
+        receiptData.rawText = result.data.text;
+        console.log('OCR Text:', receiptData.rawText);
+
+        loadingText.textContent = '✨ Analyzing data...';
+        progressPercent.textContent = '100%';
+        progressBar.style.width = '100%';
+
+        // Parse the text
+        parseReceiptData(receiptData.rawText);
+
+        // Show results
+        setTimeout(() => {
+          displayResults();
+          document.getElementById('loadingSection').style.display = 'none';
+        }, 500);
+
+      } catch (err) {
+        console.error('OCR Error:', err);
+        document.getElementById('loadingSection').style.display = 'none';
+        alert('❌ Failed to scan receipt: ' + err.message + '\n\nPlease try again or enter details manually.');
+        resetUpload();
+      }
+    }
+
+    // ------------------ PARSE RECEIPT DATA ------------------
+    function parseReceiptData(text) {
+      const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+      
+      // Reset data
+      receiptData.items = [];
+      receiptData.total = 0;
+      receiptData.category = 'Food'; // Default
+
+      // Patterns for finding prices
+      const pricePattern = /(?:₹|Rs\.?|INR)?\s*(\d+\.?\d{0,2})/gi;
+      const totalPattern = /(?:total|amount|grand total|net total|bill|sum)[\s:]*(?:₹|Rs\.?|INR)?\s*(\d+\.?\d{0,2})/gi;
+
+      // Category detection keywords
+      const categoryKeywords = {
+        'Food': ['restaurant', 'cafe', 'food', 'pizza', 'burger', 'coffee', 'lunch', 'dinner', 'breakfast', 'meal', 'kitchen', 'bistro', 'diner', 'eatery'],
+        'Travel': ['uber', 'ola', 'taxi', 'cab', 'flight', 'hotel', 'airbnb', 'booking', 'train', 'bus', 'travel', 'transport'],
+        'Shopping': ['store', 'mall', 'shop', 'mart', 'retail', 'purchase', 'sale'],
+        'Entertainment': ['movie', 'cinema', 'theatre', 'theater', 'ticket', 'show', 'concert', 'event'],
+        'Grocery': ['grocery', 'supermarket', 'walmart', 'target', 'safeway', 'whole foods', 'vegetables', 'fruits'],
+        'Utilities': ['electricity', 'water', 'gas', 'internet', 'phone', 'bill', 'utility']
+      };
+
+      // Detect category from text
+      const lowerText = text.toLowerCase();
+      for (const [category, keywords] of Object.entries(categoryKeywords)) {
+        if (keywords.some(keyword => lowerText.includes(keyword))) {
+          receiptData.category = category;
+          break;
+        }
+      }
+
+      // Find total amount
+      let totalFound = false;
+      for (const line of lines) {
+        const totalMatch = line.match(totalPattern);
+        if (totalMatch) {
+          const amount = parseFloat(totalMatch[1]);
+          if (amount > 0 && amount < 100000) {
+            receiptData.total = amount;
+            totalFound = true;
+            break;
+          }
+        }
+      }
+
+      // Parse individual items
+      for (const line of lines) {
+        // Skip lines that look like headers or totals
+        if (line.toLowerCase().includes('total') || 
+            line.toLowerCase().includes('subtotal') ||
+            line.toLowerCase().includes('tax') ||
+            line.toLowerCase().includes('receipt') ||
+            line.length < 3) {
+          continue;
+        }
+
+        // Look for price patterns
+        const matches = [...line.matchAll(pricePattern)];
+        
+        for (const match of matches) {
+          const price = parseFloat(match[1]);
+          
+          // Filter reasonable prices (between 1 and 10000)
+          if (price > 0 && price < 10000) {
+            // Extract item name (text before the price)
+            let itemName = line.substring(0, match.index).trim();
+            
+            // Clean up item name
+            itemName = itemName.replace(/^\d+\.?\s*/, ''); // Remove leading numbers
+            itemName = itemName.replace(/[₹$Rs]/gi, '').trim();
+            
+            // Only add if item name is reasonable
+            if (itemName.length >= 2 && itemName.length <= 50) {
+              receiptData.items.push({
+                name: itemName,
+                price: price
+              });
+            }
+          }
+        }
+      }
+
+      // If no total found, calculate from items
+      if (!totalFound && receiptData.items.length > 0) {
+        receiptData.total = receiptData.items.reduce((sum, item) => sum + item.price, 0);
+      }
+
+      // If still no total, try to find largest number
+      if (receiptData.total === 0) {
+        const allNumbers = [];
+        for (const line of lines) {
+          const matches = [...line.matchAll(pricePattern)];
+          matches.forEach(m => {
+            const num = parseFloat(m[1]);
+            if (num > 0 && num < 100000) allNumbers.push(num);
+          });
+        }
+        if (allNumbers.length > 0) {
+          receiptData.total = Math.max(...allNumbers);
+        }
+      }
+    }
+
+    // ------------------ DISPLAY RESULTS ------------------
+    function displayResults() {
+      // Show results section
+      document.getElementById('resultsSection').style.display = 'block';
+
+      // Display category
+      document.getElementById('detectedCategory').textContent = receiptData.category;
+
+      // Display total
+      document.getElementById('detectedTotal').textContent = `₹${receiptData.total.toFixed(2)}`;
+
+      // Display items
+      const itemsDiv = document.getElementById('detectedItems');
+      itemsDiv.innerHTML = '';
+
+      if (receiptData.items.length === 0) {
+        itemsDiv.innerHTML = '<p class="hint">No individual items detected. Only total amount found.</p>';
+      } else {
+        const ul = document.createElement('ul');
+        ul.style.listStyle = 'none';
+        ul.style.padding = '0';
+        ul.style.margin = '0';
+
+        receiptData.items.slice(0, 10).forEach(item => {
+          const li = document.createElement('li');
+          li.style.padding = '8px 12px';
+          li.style.margin = '6px 0';
+          li.style.background = 'rgba(0, 217, 255, 0.05)';
+          li.style.borderRadius = '8px';
+          li.style.border = '1px solid rgba(0, 217, 255, 0.2)';
+          li.innerHTML = `<strong>${item.name}</strong> <span style="float:right; color:var(--accent2)">₹${item.price.toFixed(2)}</span>`;
+          ul.appendChild(li);
+        });
+
+        if (receiptData.items.length > 10) {
+          const more = document.createElement('p');
+          more.className = 'hint';
+          more.textContent = `... and ${receiptData.items.length - 10} more items`;
+          itemsDiv.appendChild(more);
+        }
+
+        itemsDiv.appendChild(ul);
+      }
+    }
+
+    // ------------------ USE SCANNED DATA ------------------
+    function useScannedData() {
+      // Store data in sessionStorage to pass to room page
+      sessionStorage.setItem('scannedReceipt', JSON.stringify({
+        category: receiptData.category,
+        amount: receiptData.total,
+        note: `From receipt scan (${receiptData.items.length} items)`
+      }));
+
+      // Redirect back to room
+      window.location.href = `/join/${receiptData.roomId}?name=${encodeURIComponent(receiptData.userName)}`;
+    }
+
+    // ------------------ RESET UPLOAD ------------------
+    function resetUpload() {
+      // Reset file input
+      document.getElementById('receiptInput').value = '';
+      uploadedFile = null;
+
+      // Hide preview and results
+      document.getElementById('receiptPreview').style.display = 'none';
+      document.getElementById('scanBtn').style.display = 'none';
+      document.getElementById('resultsSection').style.display = 'none';
+      document.getElementById('loadingSection').style.display = 'none';
+
+      // Show placeholder
+      document.getElementById('uploadPlaceholder').style.display = 'block';
+
+      // Reset data
+      receiptData.category = '';
+      receiptData.total = 0;
+      receiptData.items = [];
+      receiptData.rawText = '';
+    }
+  </script>
+</body>
+</html>
