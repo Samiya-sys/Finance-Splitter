@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Room - {{room_id}}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg">
+  <div class="topbar neon-top">
+    <div>Finance Splitter</div>
+    <div>Room: <strong id="roomId">{{room_id}}</strong></div>
+    <div><a href="/">Home</a></div>
+  </div>
+
+  <div class="layout">
+    <div class="pane neon-card small">
+      <h3>Members</h3>
+      <div class="row">
+        <input id="memberName" placeholder="Member name" />
+        <button id="addMember" class="btn small">Add</button>
+      </div>
+      <ul id="membersList"></ul>
+    </div>
+
+    <div class="pane neon-card">
+      <h3>Add Expense</h3>
+      
+      <!-- Receipt Scanner Button -->
+      <div class="receipt-option">
+        <a href="/receipt/{{room_id}}?name={{name}}" class="btn" style="text-decoration:none; display:inline-block; margin-bottom:20px;">
+          📸 Add from Receipt
+        </a>
+        <p class="hint" style="margin-top:8px; margin-bottom:20px;">
+          Scan a receipt to automatically split items
+        </p>
+      </div>
+
+      <hr style="margin: 24px 0;">
+
+      <h4 style="margin-bottom:16px; color:var(--muted);">Or add manually:</h4>
+      
+      <div class="row">
+        <select id="payer">
+          <option value="">Select Payer</option>
+        </select>
+        <input id="amount" placeholder="Amount" type="number" step="0.01"/>
+      </div>
+      <div class="row">
+        <input id="category" placeholder="Category (Travel, Food...)" />
+      </div>
+      <div class="row">
+        <input id="note" placeholder="Note (optional)" />
+      </div>
+      <button id="addExpense" class="btn alt">Add Expense</button>
+
+      <hr/>
+      
+      <div class="row" style="justify-content:space-between;">
+        <button id="refreshSummary" class="btn alt small">Refresh Summary</button>
+        <button id="showAnalytics" class="btn small">📊 View Analytics & Settle</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Expense History Section -->
+  <div class="container" style="margin-top:20px;">
+    <div class="neon-card">
+      <h3>📜 Expense History</h3>
+      <div id="expenseHistory">
+        <p class="hint">No expenses yet. Add one above!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analytics Modal -->
+  <div id="analyticsModal" class="modal" style="display:none;">
+    <div class="modal-content neon-card" style="max-width:1200px; max-height:90vh; overflow-y:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+        <h2>📊 Financial Analytics & Settlement</h2>
+        <button class="btn small" onclick="closeAnalytics()">✕ Close</button>
+      </div>
+
+      <!-- Total Summary -->
+      <div class="total-summary">
+        <h3>💰 Total Spending Summary</h3>
+        <div class="summary-cards">
+          <div class="summary-card">
+            <div class="summary-label">Grand Total</div>
+            <div class="summary-value" id="grandTotal">₹0.00</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Total Expenses</div>
+            <div class="summary-value" id="totalExpenses">0</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Members</div>
+            <div class="summary-value" id="totalMembers">0</div>
+          </div>
+        </div>
+      </div>
+
+      <hr style="margin:32px 0;">
+
+      <!-- Charts Grid -->
+      <div class="analytics-grid">
+        <div class="chart-container">
+          <h4>Category Breakdown</h4>
+          <canvas id="categoryChart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h4>Member Spending</h4>
+          <canvas id="memberChart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h4>Spending Timeline</h4>
+          <canvas id="timelineChart"></canvas>
+        </div>
+      </div>
+
+      <hr style="margin:32px 0;">
+
+      <!-- Settlement Options -->
+      <div class="settlement-options">
+        <h3>💸 How would you like to split the total?</h3>
+        <p class="subtitle">Choose how to divide the ₹<span id="totalToSplit">0.00</span> among members</p>
+        
+        <div class="split-choice">
+          <button class="btn split-choice-btn" id="equalSettleBtn" onclick="setSettlementType('equal')">
+            ⚖️ Equal Split
+            <small>Everyone pays the same amount</small>
+          </button>
+          <button class="btn split-choice-btn" id="customSettleBtn" onclick="setSettlementType('custom')">
+            🎯 Custom Split
+            <small>Set custom percentages per person</small>
+          </button>
+        </div>
+
+        <!-- Custom Split Inputs -->
+        <div id="customSettlementSection" style="display:none; margin-top:24px;">
+          <h4>Set Custom Split Percentages</h4>
+          <div id="customSettlementInputs"></div>
+          <p class="hint" id="settlementTotal" style="margin-top:12px;">Total: 0%</p>
+        </div>
+
+        <button id="calculateSettlement" class="btn" style="margin-top:24px; display:none;" onclick="calculateFinalSettlement()">
+          ✅ Calculate Final Settlement
+        </button>
+      </div>
+
+      <hr style="margin:32px 0;">
+
+      <!-- Settlement Results -->
+      <div class="settlement-section" id="settlementResults" style="display:none;">
+        <h3>💰 Final Settlement</h3>
+        <div id="settlements"></div>
+      </div>
+    </div>
+  </div>
+
+<script src="{{ url_for('static', filename='main.js') }}"></script>
+<script>
+const ROOM = "{{room_id}}";
+mainRoomInit(ROOM);
+</script>
+</body>
+</html>

@@ -1,6 +1,8 @@
+import os
+
 MYSQL_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',             # your MySQL username
-    'password': 'admin@123', # your MySQL password
-    'database': 'finance_splitter_db'
+    'host': os.getenv('MYSQL_HOST'),
+    'user': os.getenv('MYSQL_USER'),
+    'password': os.getenv('MYSQL_PASSWORD'),
+    'database': os.getenv('MYSQL_DATABASE')
 }

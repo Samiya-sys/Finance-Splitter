@@ -3,7 +3,7 @@ import uuid
 import heapq
 from collections import defaultdict
 import mysql.connector
-from config import MYSQL_CONFIG
+from BACKEND.config import MYSQL_CONFIG
 
 app = Flask(__name__)
 
@@ -294,4 +294,4 @@ def minimize_transactions(net_balances):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=8000)
